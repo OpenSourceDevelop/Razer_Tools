@@ -1,13 +1,14 @@
 # Razer Legacy Mouse Tools
 
-Two small PyQt5 desktop tools for configuring older Razer mice without Razer Synapse.
+Three small PyQt5 desktop tools for configuring older Razer mice without Razer Synapse.
 
 | Tool | Mouse | USB ID | Configures |
 |---|---|---|---|
-| `razer_chroma_color.py` | Razer DeathAdder Chroma | `1532:0043` | LED colour, effect, brightness (logo and scroll wheel) |
+| `razer_deathadder_chroma_color.py` | Razer DeathAdder Chroma | `1532:0043` | LED colour, effect, brightness (logo and scroll wheel) |
+| `razer_deathadder_elite_color.py` | Razer DeathAdder Elite | `1532:005C` | LED colour, effect, brightness (logo and scroll wheel) |
 | `copperhead_config.py` | Razer Copperhead (e.g. Tempest Blue) | `1532:0101` | 5 hardware profiles: DPI, polling rate, active profile |
 
-> **Status:** Both tools have been tested against simulated devices only (`--dry-run`), not yet against real hardware. See [Verification status](#verification-status) below. Reports of results are welcome.
+> **Status:** The tools have been tested against simulated devices only (`--dry-run`), not yet against real hardware. For both DeathAdder models, the transport layer has been confirmed on hardware with the OpenMouse test tool. See [Verification status](#verification-status). Reports of results are welcome.
 
 ---
 
@@ -20,60 +21,85 @@ Two small PyQt5 desktop tools for configuring older Razer mice without Razer Syn
 pip install pyqt5 hidapi libusb1
 ```
 
-`hidapi` is needed by the DeathAdder Chroma tool, `libusb1` by the Copperhead tool.
+`hidapi` is needed by the two DeathAdder tools, `libusb1` by the Copperhead tool.
 
 Close Razer Synapse, OpenMouse Bridge and similar software before use. Two programs talking to the mouse at the same time can mix up replies.
 
 ---
 
-## DeathAdder Chroma – LED colour
+## DeathAdder Chroma and DeathAdder Elite – LED colour
 
-![DeathAdder Chroma tool](docs/chroma.png)
+| DeathAdder Chroma | DeathAdder Elite |
+|---|---|
+| ![DeathAdder Chroma tool](docs/chroma.png) | ![DeathAdder Elite tool](docs/elite.png) |
+
+Both tools share the same interface and transport code. They differ in the LED command set, because the two mice belong to different firmware generations.
 
 ### Features
 
 - Colour selection via colour field, RGB sliders (0–255), hex code input or presets. All inputs stay in sync.
 - Zone: logo, scroll wheel, or both.
-- Effect: static, breathing, blinking, spectrum, off.
 - Brightness 0–100 %.
 - Live mode: changes are sent while dragging, debounced to 60 ms.
 - Last settings are restored on start.
 - The firmware version is read on connect and shown in the status bar, as a check that the control channel was reached.
 
+Effects per model:
+
+| Effect | Chroma | Elite |
+|---|---|---|
+| Static | ✓ | ✓ |
+| Breathing, one colour | ✓ | ✓ |
+| Breathing, two colours | – | ✓ |
+| Breathing, random colours | – | ✓ |
+| Reactive (lights up on click, 4 speeds) | – | ✓ |
+| Blinking | ✓ | – |
+| Spectrum | ✓ | ✓ |
+| Off | ✓ | ✓ |
+
+The Elite tool shows a second colour field for two-colour breathing and a speed selection for the reactive effect. Both are only enabled when the matching effect is selected.
+
 ### Usage
 
 ```
-python razer_chroma_color.py              # GUI
-python razer_chroma_color.py --set #44D62C  # set static colour without GUI, e.g. for autostart
-python razer_chroma_color.py --dry-run    # GUI without mouse, packets printed to stdout
+python razer_deathadder_chroma_color.py               # GUI
+python razer_deathadder_chroma_color.py --set #44D62C # set static colour without GUI, e.g. for autostart
+python razer_deathadder_chroma_color.py --dry-run     # GUI without mouse, packets printed to stdout
 ```
+
+The same options apply to `razer_deathadder_elite_color.py`.
 
 ### Platform notes
 
-- **Windows:** works with the stock HID driver; no extra driver needed. The tool opens the Generic Desktop Mouse collection (`0x0001:0x0002`), which carries the control channel.
-- **Linux:** needs access to `/dev/hidraw*`, and the mouse must not be bound by `openrazer-driver` at the same time. Example udev rule (`/etc/udev/rules.d/99-razer-da-chroma.rules`):
+- **Windows:** works with the stock HID driver; no extra driver needed. Windows lists each HID collection of the mouse as a separate device. The tools open the Generic Desktop Mouse collection (`0x0001:0x0002`) first, which carries the control channel.
+- **Linux:** needs access to `/dev/hidraw*`, and the mouse must not be bound by `openrazer-driver` at the same time. Example udev rule (`/etc/udev/rules.d/99-razer-deathadder.rules`), covering both models:
 
   ```
   KERNEL=="hidraw*", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="0043", MODE="0660", TAG+="uaccess"
+  KERNEL=="hidraw*", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="005c", MODE="0660", TAG+="uaccess"
   ```
 
   Then reload with `sudo udevadm control --reload && sudo udevadm trigger`.
 
-### Protocol
+### Protocol: common framing
 
 90-byte HID feature reports on report ID 0, as documented in OpenMouse `mouse-protocol` (`src/razer/codec.ts`):
 
 | Byte | Content |
 |---|---|
 | 0 | status (`0x00` in requests; `0x02` = ok in replies) |
-| 1 | transaction ID, `0xFF` for this mouse |
+| 1 | transaction ID: `0xFF` for the Chroma, `0x3F` for the Elite |
 | 5 | argument length |
 | 6 | command class |
 | 7 | command ID |
 | 8… | arguments |
 | 88 | checksum: XOR of bytes 2–87 |
 
-LED commands (class `0x03`, first argument `0x01` = persistent store):
+A wrong transaction ID is not answered with an error; the mouse simply does not reply.
+
+LED IDs are the same on both models: `0x01` scroll wheel, `0x04` logo. The first argument `0x01` selects the persistent store.
+
+### Protocol: DeathAdder Chroma (standard LED commands, class `0x03`)
 
 | Command | Arguments |
 |---|---|
@@ -82,7 +108,24 @@ LED commands (class `0x03`, first argument `0x01` = persistent store):
 | `0x03 0x02` set LED effect | store, LED, effect (`0x00` static, `0x01` blinking, `0x02` breathing, `0x04` spectrum) |
 | `0x03 0x03` set LED brightness | store, LED, 0–255 |
 
-LED IDs: `0x01` scroll wheel, `0x04` logo.
+### Protocol: DeathAdder Elite (extended matrix commands, class `0x0F`)
+
+`0x0F 0x02` set effect; arguments start with store, LED, effect ID:
+
+| Effect | Length | Arguments |
+|---|---|---|
+| off | 6 | store, LED, `0x00`, 0, 0, 0 |
+| static | 9 | store, LED, `0x01`, 0, 0, 1, R, G, B |
+| breathing, random | 6 | store, LED, `0x02`, 0, 0, 0 |
+| breathing, one colour | 9 | store, LED, `0x02`, 1, 0, 1, R, G, B |
+| breathing, two colours | 12 | store, LED, `0x02`, 2, 0, 2, R1, G1, B1, R2, G2, B2 |
+| spectrum | 6 | store, LED, `0x03`, 0, 0, 0 |
+| reactive | 9 | store, LED, `0x05`, 0, speed (1 fast … 4 slow), 1, R, G, B |
+
+| Command | Arguments |
+|---|---|
+| `0x0F 0x04` set brightness | store, LED, 0–255 |
+| `0x0F 0x84` get brightness | store, LED, 0 |
 
 ---
 
@@ -161,15 +204,17 @@ razercfg waits 250 ms between profile commits; this tool does the same.
 | DeathAdder Chroma: packet format, checksum, transaction ID `0xFF` | Confirmed on hardware via the OpenMouse test tool (firmware read, DPI and polling-rate write and read-back; firmware 1.8, Windows, wired) |
 | DeathAdder Chroma: LED state, colour and effect commands | Documented identically in OpenRazer and razercfg; not yet tested with this tool |
 | DeathAdder Chroma: blinking effect, brightness command | From OpenRazer only; not in razercfg; untested |
+| DeathAdder Elite: packet format, checksum, transaction ID `0x3F` | Confirmed on hardware via the OpenMouse test tool (firmware read, DPI and polling-rate write and read-back; firmware 1.6, Windows, wired) |
+| DeathAdder Elite: all LED commands | From OpenRazer; packet layouts checked byte for byte against its source; not yet tested with this tool |
 | Copperhead: complete protocol | From razercfg only; untested with this tool |
 
 ---
 
 ## Credits
 
-- [OpenMouse Project](https://github.com/OpenMouse-Project) – Razer packet format and device table (`mouse-protocol`)
+- [OpenMouse Project](https://github.com/OpenMouse-Project) – Razer packet format, device table and transaction IDs (`mouse-protocol`), hardware test tool
 - [razercfg](https://github.com/mbuesch/razer) by Michael Büsch – Copperhead protocol, DeathAdder Chroma LED commands
-- [OpenRazer](https://github.com/openrazer/openrazer) – standard Chroma LED commands
+- [OpenRazer](https://github.com/openrazer/openrazer) – standard and extended matrix LED commands
 
 ## License
 
