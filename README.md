@@ -19,7 +19,6 @@ Small PyQt5 desktop tools for configuring older Razer mice without Razer Synapse
 - [Copperhead](#copperhead)
 - [Protocol](#protocol)
 - [Verification status](#verification-status)
-- [Contributing](#contributing)
 - [Credits](#credits) · [License](#license) · [Disclaimer](#disclaimer)
 
 ---
