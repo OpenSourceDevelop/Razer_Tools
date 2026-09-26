@@ -291,14 +291,6 @@ razercfg waits 250 ms between profile commits; this tool does the same.
 | DeathAdder Elite: LED commands | From OpenRazer; packet layouts checked byte by byte against its source; not yet confirmed on hardware |
 | Copperhead: complete protocol | From razercfg only; not yet tested |
 
-All tools have been tested against simulated devices (`--dry-run`).
-
----
-
-## Contributing
-
-[`AGENTS.md`](AGENTS.md) is the specification (Pflichtenheft) for this repository: requirements with acceptance criteria, protocol facts, safety rules, coding conventions and how to verify a change. Read it before changing code – it applies to humans and coding agents alike.
-
 ---
 
 ## Credits
